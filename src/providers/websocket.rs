@@ -288,10 +288,11 @@ impl RawWsProvider {
             let mut text_bytes = text.into_bytes();
             match simd_json::from_slice::<Message>(&mut text_bytes) {
                 Ok(message) => {
-                    // Route to all active subscriptions
-                    // In a more sophisticated implementation, we'd match by subscription type
+                    // Route message to matching subscriptions only
                     for entry in subscriptions.iter() {
-                        let _ = entry.value().tx.send(message.clone());
+                        if message_matches_subscription(&message, &entry.value().subscription) {
+                            let _ = entry.value().tx.send(message.clone());
+                        }
                     }
                 }
                 Err(_) => {
@@ -299,6 +300,71 @@ impl RawWsProvider {
                 }
             }
         }
+    }
+}
+
+/// Check if an incoming message matches a subscription.
+///
+/// This function determines whether a WebSocket message should be routed
+/// to a particular subscription channel based on message type and parameters.
+fn message_matches_subscription(message: &Message, subscription: &Subscription) -> bool {
+    match (message, subscription) {
+        // Market data subscriptions
+        (Message::AllMids(_), Subscription::AllMids) => true,
+
+        (Message::L2Book(book), Subscription::L2Book { coin }) => {
+            book.data.coin.eq_ignore_ascii_case(coin)
+        }
+
+        (Message::Trades(trades), Subscription::Trades { coin }) => {
+            trades.data.first().map_or(false, |t| t.coin.eq_ignore_ascii_case(coin))
+        }
+
+        (Message::Candle(candle), Subscription::Candle { coin, interval }) => {
+            candle.data.coin.eq_ignore_ascii_case(coin)
+                && candle.data.interval.eq_ignore_ascii_case(interval)
+        }
+
+        // User subscriptions - match by user address
+        (Message::OrderUpdates(_), Subscription::OrderUpdates { user: _ }) => {
+            // OrderUpdates messages don't contain user in data, but the exchange
+            // only sends updates for the subscribed user, so we accept all
+            true
+        }
+
+        (Message::UserFills(fills), Subscription::UserFills { user }) => {
+            fills.data.user == *user
+        }
+
+        (Message::UserFundings(fundings), Subscription::UserFundings { user }) => {
+            fundings.data.user == *user
+        }
+
+        (Message::UserNonFundingLedgerUpdates(updates), Subscription::UserNonFundingLedgerUpdates { user }) => {
+            updates.data.user == *user
+        }
+
+        (Message::User(_), Subscription::UserEvents { user: _ }) => {
+            // User messages (generic user events) don't always contain user address
+            // in a consistent location, so we accept all for UserEvents subscription
+            true
+        }
+
+        (Message::Notification(_), Subscription::Notification { user: _ }) => {
+            // Notifications are user-specific, exchange only sends for subscribed user
+            true
+        }
+
+        (Message::WebData2(data), Subscription::WebData2 { user }) => {
+            data.data.user == *user
+        }
+
+        // Control messages - route to all subscribers (they'll filter as needed)
+        (Message::SubscriptionResponse, _) => true,
+        (Message::Pong, _) => true,
+
+        // No match - message type doesn't correspond to subscription type
+        _ => false,
     }
 }
 
