@@ -682,3 +682,190 @@ impl ManagedWsProvider {
 
 // Re-export for backwards compatibility
 pub use RawWsProvider as WsProvider;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::address;
+
+    fn make_l2_book(coin: &str) -> Message {
+        Message::L2Book(crate::types::ws::L2Book {
+            data: crate::types::ws::L2BookData {
+                coin: coin.to_string(),
+                time: 0,
+                levels: vec![],
+            },
+        })
+    }
+
+    fn make_all_mids() -> Message {
+        Message::AllMids(crate::types::ws::AllMids {
+            data: crate::types::ws::AllMidsData {
+                mids: std::collections::HashMap::new(),
+            },
+        })
+    }
+
+    fn make_trades(coin: &str) -> Message {
+        Message::Trades(crate::types::ws::Trades {
+            data: vec![crate::types::ws::Trade {
+                coin: coin.to_string(),
+                side: "B".to_string(),
+                px: "100".to_string(),
+                sz: "1".to_string(),
+                time: 0,
+                hash: "0x123".to_string(),
+                tid: 1,
+            }],
+        })
+    }
+
+    fn make_user_fills(user: alloy::primitives::Address) -> Message {
+        Message::UserFills(crate::types::ws::UserFills {
+            data: crate::types::ws::UserFillsData {
+                is_snapshot: Some(false),
+                user,
+                fills: vec![],
+            },
+        })
+    }
+
+    #[test]
+    fn test_l2_book_routes_to_matching_subscription() {
+        let msg = make_l2_book("BTC");
+        let sub = Subscription::L2Book { coin: "BTC".to_string() };
+        assert!(message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_l2_book_does_not_route_to_different_coin() {
+        let msg = make_l2_book("BTC");
+        let sub = Subscription::L2Book { coin: "ETH".to_string() };
+        assert!(!message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_l2_book_does_not_route_to_all_mids() {
+        let msg = make_l2_book("BTC");
+        let sub = Subscription::AllMids;
+        assert!(!message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_l2_book_does_not_route_to_user_fills() {
+        let msg = make_l2_book("BTC");
+        let user = address!("0000000000000000000000000000000000000001");
+        let sub = Subscription::UserFills { user };
+        assert!(!message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_all_mids_routes_correctly() {
+        let msg = make_all_mids();
+        let sub = Subscription::AllMids;
+        assert!(message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_all_mids_does_not_route_to_l2_book() {
+        let msg = make_all_mids();
+        let sub = Subscription::L2Book { coin: "BTC".to_string() };
+        assert!(!message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_trades_routes_to_matching_coin() {
+        let msg = make_trades("BTC");
+        let sub = Subscription::Trades { coin: "BTC".to_string() };
+        assert!(message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_trades_does_not_route_to_different_coin() {
+        let msg = make_trades("BTC");
+        let sub = Subscription::Trades { coin: "ETH".to_string() };
+        assert!(!message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_user_fills_routes_to_matching_user() {
+        let user = address!("0000000000000000000000000000000000000001");
+        let msg = make_user_fills(user);
+        let sub = Subscription::UserFills { user };
+        assert!(message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_user_fills_does_not_route_to_different_user() {
+        let user1 = address!("0000000000000000000000000000000000000001");
+        let user2 = address!("0000000000000000000000000000000000000002");
+        let msg = make_user_fills(user1);
+        let sub = Subscription::UserFills { user: user2 };
+        assert!(!message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_user_fills_does_not_route_to_l2_book() {
+        let user = address!("0000000000000000000000000000000000000001");
+        let msg = make_user_fills(user);
+        let sub = Subscription::L2Book { coin: "BTC".to_string() };
+        assert!(!message_matches_subscription(&msg, &sub));
+    }
+
+    #[test]
+    fn test_control_messages_route_to_all() {
+        let sub_l2 = Subscription::L2Book { coin: "BTC".to_string() };
+        let sub_mids = Subscription::AllMids;
+        let user = address!("0000000000000000000000000000000000000001");
+        let sub_fills = Subscription::UserFills { user };
+
+        // SubscriptionResponse routes to all
+        assert!(message_matches_subscription(&Message::SubscriptionResponse, &sub_l2));
+        assert!(message_matches_subscription(&Message::SubscriptionResponse, &sub_mids));
+        assert!(message_matches_subscription(&Message::SubscriptionResponse, &sub_fills));
+
+        // Pong routes to all
+        assert!(message_matches_subscription(&Message::Pong, &sub_l2));
+        assert!(message_matches_subscription(&Message::Pong, &sub_mids));
+        assert!(message_matches_subscription(&Message::Pong, &sub_fills));
+    }
+
+    #[test]
+    fn test_no_cross_contamination() {
+        // This is the critical test - ensures L2Book messages don't end up on UserFills channel
+        let l2_msg = make_l2_book("BTC");
+        let mids_msg = make_all_mids();
+        let trades_msg = make_trades("BTC");
+        let user = address!("0000000000000000000000000000000000000001");
+        let fills_msg = make_user_fills(user);
+
+        let l2_sub = Subscription::L2Book { coin: "BTC".to_string() };
+        let mids_sub = Subscription::AllMids;
+        let trades_sub = Subscription::Trades { coin: "BTC".to_string() };
+        let fills_sub = Subscription::UserFills { user };
+
+        // L2Book only matches L2Book
+        assert!(message_matches_subscription(&l2_msg, &l2_sub));
+        assert!(!message_matches_subscription(&l2_msg, &mids_sub));
+        assert!(!message_matches_subscription(&l2_msg, &trades_sub));
+        assert!(!message_matches_subscription(&l2_msg, &fills_sub));
+
+        // AllMids only matches AllMids
+        assert!(!message_matches_subscription(&mids_msg, &l2_sub));
+        assert!(message_matches_subscription(&mids_msg, &mids_sub));
+        assert!(!message_matches_subscription(&mids_msg, &trades_sub));
+        assert!(!message_matches_subscription(&mids_msg, &fills_sub));
+
+        // Trades only matches Trades
+        assert!(!message_matches_subscription(&trades_msg, &l2_sub));
+        assert!(!message_matches_subscription(&trades_msg, &mids_sub));
+        assert!(message_matches_subscription(&trades_msg, &trades_sub));
+        assert!(!message_matches_subscription(&trades_msg, &fills_sub));
+
+        // UserFills only matches UserFills
+        assert!(!message_matches_subscription(&fills_msg, &l2_sub));
+        assert!(!message_matches_subscription(&fills_msg, &mids_sub));
+        assert!(!message_matches_subscription(&fills_msg, &trades_sub));
+        assert!(message_matches_subscription(&fills_msg, &fills_sub));
+    }
+}
