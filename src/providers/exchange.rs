@@ -147,6 +147,12 @@ impl<S: HyperliquidSigner> RawExchangeProvider<S> {
         Self::new(signer, EXCHANGE_ENDPOINT_TESTNET, None, None, None)
     }
 
+    /// Create provider for a custom endpoint (e.g., localhost for testing)
+    pub fn custom(endpoint: &str, signer: S) -> Self {
+        let endpoint_str = Box::leak(format!("{}/exchange", endpoint).into_boxed_str());
+        Self::new(signer, endpoint_str, None, None, None)
+    }
+
     pub fn mainnet_vault(signer: S, vault_address: Address) -> Self {
         Self::new(
             signer,
@@ -1357,7 +1363,7 @@ impl<S: HyperliquidSigner + Clone + 'static> ManagedExchangeProviderBuilder<S> {
     /// Build the provider
     pub async fn build(self) -> Result<Arc<ManagedExchangeProvider<S>>> {
         // Create raw provider
-        let raw = match self.network {
+        let raw = match &self.network {
             Network::Mainnet => {
                 if let Some(vault) = self.vault_address {
                     RawExchangeProvider::mainnet_vault(self.signer.clone(), vault)
@@ -1375,6 +1381,9 @@ impl<S: HyperliquidSigner + Clone + 'static> ManagedExchangeProviderBuilder<S> {
                 } else {
                     RawExchangeProvider::testnet(self.signer.clone())
                 }
+            }
+            Network::Custom { api_url, .. } => {
+                RawExchangeProvider::custom(api_url, self.signer.clone())
             }
         };
         

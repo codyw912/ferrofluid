@@ -150,9 +150,12 @@ impl<S: HyperliquidSigner + Clone> AgentManager<S> {
         use crate::providers::RawExchangeProvider;
         
         // Create a temporary raw provider just for agent approval
-        let raw_provider = match self.network {
+        let raw_provider = match &self.network {
             Network::Mainnet => RawExchangeProvider::mainnet(self.master_signer.clone()),
             Network::Testnet => RawExchangeProvider::testnet(self.master_signer.clone()),
+            Network::Custom { api_url, .. } => {
+                RawExchangeProvider::custom(api_url, self.master_signer.clone())
+            }
         };
         
         // Approve the agent

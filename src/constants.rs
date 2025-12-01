@@ -1,23 +1,38 @@
 // ==================== Network Configuration ====================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Network {
     Mainnet,
     Testnet,
+    /// Custom network with user-specified URLs
+    Custom {
+        api_url: String,
+        ws_url: String,
+    },
 }
 
 impl Network {
-    pub fn api_url(&self) -> &'static str {
+    pub fn api_url(&self) -> &str {
         match self {
             Network::Mainnet => "https://api.hyperliquid.xyz",
             Network::Testnet => "https://api.hyperliquid-testnet.xyz",
+            Network::Custom { api_url, .. } => api_url,
         }
     }
 
-    pub fn ws_url(&self) -> &'static str {
+    pub fn ws_url(&self) -> &str {
         match self {
             Network::Mainnet => "wss://api.hyperliquid.xyz/ws",
             Network::Testnet => "wss://api.hyperliquid-testnet.xyz/ws",
+            Network::Custom { ws_url, .. } => ws_url,
+        }
+    }
+
+    /// Create a localhost network for testing
+    pub fn localhost(port: u16) -> Self {
+        Network::Custom {
+            api_url: format!("http://localhost:{}", port),
+            ws_url: format!("ws://localhost:{}/ws", port),
         }
     }
 }

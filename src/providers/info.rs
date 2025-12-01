@@ -86,12 +86,11 @@ impl InfoProvider {
 
         let client = Client::builder(TokioExecutor::new()).build(https);
 
+        let endpoint = format!("{}/info", network.api_url());
+        
         Self {
             client,
-            endpoint: match network {
-                Network::Mainnet => "https://api.hyperliquid.xyz/info",
-                Network::Testnet => "https://api.hyperliquid-testnet.xyz/info",
-            },
+            endpoint: Box::leak(endpoint.into_boxed_str()),
         }
     }
 

@@ -45,11 +45,12 @@ pub struct RawWsProvider {
 impl RawWsProvider {
     /// Connect to Hyperliquid WebSocket
     pub async fn connect(network: Network) -> Result<Self, HyperliquidError> {
-        let url = match network {
-            Network::Mainnet => "https://api.hyperliquid.xyz/ws",
-            Network::Testnet => "https://api.hyperliquid-testnet.xyz/ws",
-        };
+        let url = network.ws_url().to_string();
+        Self::connect_url(&url, network).await
+    }
 
+    /// Connect to a custom WebSocket URL
+    pub async fn connect_url(url: &str, network: Network) -> Result<Self, HyperliquidError> {
         let ws = Self::establish_connection(url).await?;
         let subscriptions = Arc::new(DashMap::new());
         let next_id = Arc::new(AtomicU32::new(1));
@@ -76,12 +77,24 @@ impl RawWsProvider {
     async fn establish_connection(
         url: &str,
     ) -> Result<WebSocket<TokioIo<Upgraded>>, HyperliquidError> {
-        use hyper_rustls::HttpsConnectorBuilder;
-        use hyper_util::client::legacy::Client;
-
         let uri = url
             .parse::<hyper::Uri>()
             .map_err(|e| HyperliquidError::WebSocket(format!("Invalid URL: {}", e)))?;
+
+        let is_secure = uri.scheme_str() == Some("https") || uri.scheme_str() == Some("wss");
+
+        if is_secure {
+            Self::establish_https_connection(&uri).await
+        } else {
+            Self::establish_http_connection(&uri).await
+        }
+    }
+
+    async fn establish_https_connection(
+        uri: &hyper::Uri,
+    ) -> Result<WebSocket<TokioIo<Upgraded>>, HyperliquidError> {
+        use hyper_rustls::HttpsConnectorBuilder;
+        use hyper_util::client::legacy::Client;
 
         // Create HTTPS connector with proper configuration
         let https = HttpsConnectorBuilder::new()
@@ -96,6 +109,29 @@ impl RawWsProvider {
         let client = Client::builder(hyper_util::rt::TokioExecutor::new())
             .build::<_, Empty<Bytes>>(https);
 
+        Self::perform_websocket_upgrade(uri, client).await
+    }
+
+    async fn establish_http_connection(
+        uri: &hyper::Uri,
+    ) -> Result<WebSocket<TokioIo<Upgraded>>, HyperliquidError> {
+        use hyper_util::client::legacy::Client;
+        use hyper_util::client::legacy::connect::HttpConnector;
+
+        let http = HttpConnector::new();
+        let client = Client::builder(hyper_util::rt::TokioExecutor::new())
+            .build::<_, Empty<Bytes>>(http);
+
+        Self::perform_websocket_upgrade(uri, client).await
+    }
+
+    async fn perform_websocket_upgrade<C>(
+        uri: &hyper::Uri,
+        client: hyper_util::client::legacy::Client<C, Empty<Bytes>>,
+    ) -> Result<WebSocket<TokioIo<Upgraded>>, HyperliquidError>
+    where
+        C: hyper_util::client::legacy::connect::Connect + Clone + Send + Sync + 'static,
+    {
         // Create WebSocket upgrade request
         let host = uri
             .host()
@@ -103,7 +139,7 @@ impl RawWsProvider {
 
         let req = Request::builder()
             .method("GET")
-            .uri(&uri)
+            .uri(uri)
             .header(header::HOST, host)
             .header(header::CONNECTION, "upgrade")
             .header(header::UPGRADE, "websocket")
@@ -443,7 +479,7 @@ impl ManagedWsProvider {
     /// Connect with custom configuration
     pub async fn connect(network: Network, config: WsConfig) -> Result<Arc<Self>, HyperliquidError> {
         // Create initial connection
-        let raw_provider = RawWsProvider::connect(network).await?;
+        let raw_provider = RawWsProvider::connect(network.clone()).await?;
         
         let provider = Arc::new(Self {
             network,
@@ -624,7 +660,7 @@ impl ManagedWsProvider {
                 
                 println!("Attempting reconnection #{}", reconnect_attempts + 1);
                 
-                match RawWsProvider::connect(self.network).await {
+                match RawWsProvider::connect(self.network.clone()).await {
                     Ok(mut new_provider) => {
                         // Start reading before replaying subscriptions
                         if let Err(e) = new_provider.start_reading().await {
