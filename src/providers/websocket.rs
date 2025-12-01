@@ -81,11 +81,13 @@ impl RawWsProvider {
             .parse::<hyper::Uri>()
             .map_err(|e| HyperliquidError::WebSocket(format!("Invalid URL: {}", e)))?;
 
-        let is_secure = uri.scheme_str() == Some("https") || uri.scheme_str() == Some("wss");
+        let scheme = uri.scheme_str().unwrap_or("wss");
+        let is_secure = scheme == "https" || scheme == "wss";
 
         if is_secure {
             Self::establish_https_connection(&uri).await
         } else {
+            // Handle ws:// and http:// schemes
             Self::establish_http_connection(&uri).await
         }
     }
@@ -118,11 +120,21 @@ impl RawWsProvider {
         use hyper_util::client::legacy::Client;
         use hyper_util::client::legacy::connect::HttpConnector;
 
+        // Convert ws:// to http:// for the HTTP connector
+        let http_uri = if uri.scheme_str() == Some("ws") {
+            let mut parts = uri.clone().into_parts();
+            parts.scheme = Some("http".parse().unwrap());
+            hyper::Uri::from_parts(parts)
+                .map_err(|e| HyperliquidError::WebSocket(format!("Failed to convert URI: {}", e)))?
+        } else {
+            uri.clone()
+        };
+
         let http = HttpConnector::new();
         let client = Client::builder(hyper_util::rt::TokioExecutor::new())
             .build::<_, Empty<Bytes>>(http);
 
-        Self::perform_websocket_upgrade(uri, client).await
+        Self::perform_websocket_upgrade(&http_uri, client).await
     }
 
     async fn perform_websocket_upgrade<C>(
