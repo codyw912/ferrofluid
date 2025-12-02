@@ -15,8 +15,8 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use crate::{
     Network,
     errors::HyperliquidError,
-    types::ws::{Message, Subscription, WsRequest},
     types::Symbol,
+    types::ws::{Message, Subscription, WsRequest},
 };
 
 pub type SubscriptionId = u32;
@@ -50,7 +50,10 @@ impl RawWsProvider {
     }
 
     /// Connect to a custom WebSocket URL
-    pub async fn connect_url(url: &str, network: Network) -> Result<Self, HyperliquidError> {
+    pub async fn connect_url(
+        url: &str,
+        network: Network,
+    ) -> Result<Self, HyperliquidError> {
         let ws = Self::establish_connection(url).await?;
         let subscriptions = Arc::new(DashMap::new());
         let next_id = Arc::new(AtomicU32::new(1));
@@ -124,8 +127,9 @@ impl RawWsProvider {
         let http_uri = if uri.scheme_str() == Some("ws") {
             let mut parts = uri.clone().into_parts();
             parts.scheme = Some("http".parse().unwrap());
-            hyper::Uri::from_parts(parts)
-                .map_err(|e| HyperliquidError::WebSocket(format!("Failed to convert URI: {}", e)))?
+            hyper::Uri::from_parts(parts).map_err(|e| {
+                HyperliquidError::WebSocket(format!("Failed to convert URI: {}", e))
+            })?
         } else {
             uri.clone()
         };
@@ -338,7 +342,10 @@ impl RawWsProvider {
                 Ok(message) => {
                     // Route message to matching subscriptions only
                     for entry in subscriptions.iter() {
-                        if message_matches_subscription(&message, &entry.value().subscription) {
+                        if message_matches_subscription(
+                            &message,
+                            &entry.value().subscription,
+                        ) {
                             let _ = entry.value().tx.send(message.clone());
                         }
                     }
@@ -364,9 +371,10 @@ fn message_matches_subscription(message: &Message, subscription: &Subscription) 
             book.data.coin.eq_ignore_ascii_case(coin)
         }
 
-        (Message::Trades(trades), Subscription::Trades { coin }) => {
-            trades.data.first().map_or(false, |t| t.coin.eq_ignore_ascii_case(coin))
-        }
+        (Message::Trades(trades), Subscription::Trades { coin }) => trades
+            .data
+            .first()
+            .map_or(false, |t| t.coin.eq_ignore_ascii_case(coin)),
 
         (Message::Candle(candle), Subscription::Candle { coin, interval }) => {
             candle.data.coin.eq_ignore_ascii_case(coin)
@@ -388,9 +396,10 @@ fn message_matches_subscription(message: &Message, subscription: &Subscription) 
             fundings.data.user == *user
         }
 
-        (Message::UserNonFundingLedgerUpdates(updates), Subscription::UserNonFundingLedgerUpdates { user }) => {
-            updates.data.user == *user
-        }
+        (
+            Message::UserNonFundingLedgerUpdates(updates),
+            Subscription::UserNonFundingLedgerUpdates { user },
+        ) => updates.data.user == *user,
 
         (Message::User(_), Subscription::UserEvents { user: _ }) => {
             // User messages (generic user events) don't always contain user address
@@ -469,7 +478,7 @@ struct ManagedSubscription {
     subscription: Subscription,
     tx: UnboundedSender<Message>,
     #[allow(dead_code)]
-    created_at: Instant,  // For future use: subscription age tracking
+    created_at: Instant, // For future use: subscription age tracking
 }
 
 /// Managed WebSocket provider with automatic keep-alive and reconnection
@@ -489,10 +498,13 @@ pub struct ManagedWsProvider {
 
 impl ManagedWsProvider {
     /// Connect with custom configuration
-    pub async fn connect(network: Network, config: WsConfig) -> Result<Arc<Self>, HyperliquidError> {
+    pub async fn connect(
+        network: Network,
+        config: WsConfig,
+    ) -> Result<Arc<Self>, HyperliquidError> {
         // Create initial connection
         let raw_provider = RawWsProvider::connect(network.clone()).await?;
-        
+
         let provider = Arc::new(Self {
             network,
             inner: Arc::new(Mutex::new(Some(raw_provider))),
@@ -500,7 +512,7 @@ impl ManagedWsProvider {
             config,
             next_id: Arc::new(AtomicU32::new(1)),
         });
-        
+
         // Start keep-alive task if configured
         if provider.config.ping_interval > Duration::ZERO {
             let provider_clone = provider.clone();
@@ -508,7 +520,7 @@ impl ManagedWsProvider {
                 provider_clone.keepalive_loop().await;
             });
         }
-        
+
         // Start reconnection task if configured
         if provider.config.auto_reconnect {
             let provider_clone = provider.clone();
@@ -516,26 +528,31 @@ impl ManagedWsProvider {
                 provider_clone.reconnect_loop().await;
             });
         }
-        
+
         Ok(provider)
     }
-    
+
     /// Connect with default configuration
-    pub async fn connect_with_defaults(network: Network) -> Result<Arc<Self>, HyperliquidError> {
+    pub async fn connect_with_defaults(
+        network: Network,
+    ) -> Result<Arc<Self>, HyperliquidError> {
         Self::connect(network, WsConfig::default()).await
     }
-    
+
     /// Check if currently connected
     pub async fn is_connected(&self) -> bool {
         let inner = self.inner.lock().await;
         inner.as_ref().map(|p| p.is_connected()).unwrap_or(false)
     }
-    
+
     /// Get mutable access to the raw provider
-    pub async fn raw(&self) -> Result<tokio::sync::MutexGuard<'_, Option<RawWsProvider>>, HyperliquidError> {
+    pub async fn raw(
+        &self,
+    ) -> Result<tokio::sync::MutexGuard<'_, Option<RawWsProvider>>, HyperliquidError>
+    {
         Ok(self.inner.lock().await)
     }
-    
+
     /// Subscribe to L2 order book updates with automatic replay on reconnect
     pub async fn subscribe_l2_book(
         &self,
@@ -547,7 +564,7 @@ impl ManagedWsProvider {
         };
         self.subscribe(subscription).await
     }
-    
+
     /// Subscribe to trades with automatic replay on reconnect
     pub async fn subscribe_trades(
         &self,
@@ -559,33 +576,33 @@ impl ManagedWsProvider {
         };
         self.subscribe(subscription).await
     }
-    
+
     /// Subscribe to all mid prices with automatic replay on reconnect
     pub async fn subscribe_all_mids(
         &self,
     ) -> Result<(SubscriptionId, UnboundedReceiver<Message>), HyperliquidError> {
         self.subscribe(Subscription::AllMids).await
     }
-    
+
     /// Generic subscription with automatic replay on reconnect
     pub async fn subscribe(
         &self,
         subscription: Subscription,
     ) -> Result<(SubscriptionId, UnboundedReceiver<Message>), HyperliquidError> {
         let mut inner = self.inner.lock().await;
-        let raw_provider = inner.as_mut().ok_or_else(|| {
-            HyperliquidError::WebSocket("Not connected".to_string())
-        })?;
-        
+        let raw_provider = inner
+            .as_mut()
+            .ok_or_else(|| HyperliquidError::WebSocket("Not connected".to_string()))?;
+
         // Subscribe using the raw provider
         let (_raw_id, rx) = raw_provider.subscribe(subscription.clone()).await?;
-        
+
         // Generate our own ID for tracking
         let managed_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        
+
         // Create channel for managed subscription
         let (tx, managed_rx) = mpsc::unbounded_channel();
-        
+
         // Store subscription for replay
         self.subscriptions.insert(
             managed_id,
@@ -595,7 +612,7 @@ impl ManagedWsProvider {
                 created_at: Instant::now(),
             },
         );
-        
+
         // Forward messages from raw to managed
         let subscriptions = self.subscriptions.clone();
         tokio::spawn(async move {
@@ -608,38 +625,38 @@ impl ManagedWsProvider {
             // Clean up when channel closes
             subscriptions.remove(&managed_id);
         });
-        
+
         Ok((managed_id, managed_rx))
     }
-    
+
     /// Unsubscribe and stop automatic replay
     pub async fn unsubscribe(&self, id: SubscriptionId) -> Result<(), HyperliquidError> {
         // Remove from our tracking
         self.subscriptions.remove(&id);
-        
+
         // Note: We can't unsubscribe from the raw provider because we don't
         // track the mapping between our IDs and raw IDs. This is fine since
         // the subscription will be cleaned up on reconnect anyway.
-        
+
         Ok(())
     }
-    
+
     /// Start reading messages (must be called after connecting)
     pub async fn start_reading(&self) -> Result<(), HyperliquidError> {
         let mut inner = self.inner.lock().await;
-        let raw_provider = inner.as_mut().ok_or_else(|| {
-            HyperliquidError::WebSocket("Not connected".to_string())
-        })?;
+        let raw_provider = inner
+            .as_mut()
+            .ok_or_else(|| HyperliquidError::WebSocket("Not connected".to_string()))?;
         raw_provider.start_reading().await
     }
-    
+
     // Keep-alive loop
     async fn keepalive_loop(self: Arc<Self>) {
         let mut interval = tokio::time::interval(self.config.ping_interval);
-        
+
         loop {
             interval.tick().await;
-            
+
             let mut inner = self.inner.lock().await;
             if let Some(provider) = inner.as_mut() {
                 if provider.ping().await.is_err() {
@@ -650,16 +667,16 @@ impl ManagedWsProvider {
             }
         }
     }
-    
+
     // Reconnection loop
     async fn reconnect_loop(self: Arc<Self>) {
         let mut reconnect_attempts = 0u32;
         let mut current_delay = self.config.reconnect_delay;
-        
+
         loop {
             // Wait a bit before checking
             sleep(Duration::from_secs(1)).await;
-            
+
             // Check if we need to reconnect
             if !self.is_connected().await {
                 // Check max attempts
@@ -669,9 +686,9 @@ impl ManagedWsProvider {
                         break;
                     }
                 }
-                
+
                 println!("Attempting reconnection #{}", reconnect_attempts + 1);
-                
+
                 match RawWsProvider::connect(self.network.clone()).await {
                     Ok(mut new_provider) => {
                         // Start reading before replaying subscriptions
@@ -679,31 +696,35 @@ impl ManagedWsProvider {
                             eprintln!("Failed to start reading after reconnect: {}", e);
                             continue;
                         }
-                        
+
                         // Replay all subscriptions
                         let mut replay_errors = 0;
                         for entry in self.subscriptions.iter() {
-                            if let Err(e) = new_provider.subscribe(entry.subscription.clone()).await {
+                            if let Err(e) =
+                                new_provider.subscribe(entry.subscription.clone()).await
+                            {
                                 eprintln!("Failed to replay subscription: {}", e);
                                 replay_errors += 1;
                             }
                         }
-                        
+
                         if replay_errors == 0 {
                             // Success! Reset counters
                             *self.inner.lock().await = Some(new_provider);
                             reconnect_attempts = 0;
                             current_delay = self.config.reconnect_delay;
-                            println!("Reconnection successful, {} subscriptions replayed", 
-                                     self.subscriptions.len());
+                            println!(
+                                "Reconnection successful, {} subscriptions replayed",
+                                self.subscriptions.len()
+                            );
                         }
                     }
                     Err(e) => {
                         eprintln!("Reconnection failed: {}", e);
-                        
+
                         // Wait before next attempt
                         sleep(current_delay).await;
-                        
+
                         // Update delay for next attempt
                         reconnect_attempts += 1;
                         if self.config.exponential_backoff {
@@ -717,7 +738,7 @@ impl ManagedWsProvider {
             }
         }
     }
-    
+
     // Handle disconnection
     async fn handle_disconnect(&self) {
         *self.inner.lock().await = None;
@@ -781,14 +802,18 @@ mod tests {
     #[test]
     fn test_l2_book_routes_to_matching_subscription() {
         let msg = make_l2_book("BTC");
-        let sub = Subscription::L2Book { coin: "BTC".to_string() };
+        let sub = Subscription::L2Book {
+            coin: "BTC".to_string(),
+        };
         assert!(message_matches_subscription(&msg, &sub));
     }
 
     #[test]
     fn test_l2_book_does_not_route_to_different_coin() {
         let msg = make_l2_book("BTC");
-        let sub = Subscription::L2Book { coin: "ETH".to_string() };
+        let sub = Subscription::L2Book {
+            coin: "ETH".to_string(),
+        };
         assert!(!message_matches_subscription(&msg, &sub));
     }
 
@@ -817,21 +842,27 @@ mod tests {
     #[test]
     fn test_all_mids_does_not_route_to_l2_book() {
         let msg = make_all_mids();
-        let sub = Subscription::L2Book { coin: "BTC".to_string() };
+        let sub = Subscription::L2Book {
+            coin: "BTC".to_string(),
+        };
         assert!(!message_matches_subscription(&msg, &sub));
     }
 
     #[test]
     fn test_trades_routes_to_matching_coin() {
         let msg = make_trades("BTC");
-        let sub = Subscription::Trades { coin: "BTC".to_string() };
+        let sub = Subscription::Trades {
+            coin: "BTC".to_string(),
+        };
         assert!(message_matches_subscription(&msg, &sub));
     }
 
     #[test]
     fn test_trades_does_not_route_to_different_coin() {
         let msg = make_trades("BTC");
-        let sub = Subscription::Trades { coin: "ETH".to_string() };
+        let sub = Subscription::Trades {
+            coin: "ETH".to_string(),
+        };
         assert!(!message_matches_subscription(&msg, &sub));
     }
 
@@ -856,21 +887,34 @@ mod tests {
     fn test_user_fills_does_not_route_to_l2_book() {
         let user = address!("0000000000000000000000000000000000000001");
         let msg = make_user_fills(user);
-        let sub = Subscription::L2Book { coin: "BTC".to_string() };
+        let sub = Subscription::L2Book {
+            coin: "BTC".to_string(),
+        };
         assert!(!message_matches_subscription(&msg, &sub));
     }
 
     #[test]
     fn test_control_messages_route_to_all() {
-        let sub_l2 = Subscription::L2Book { coin: "BTC".to_string() };
+        let sub_l2 = Subscription::L2Book {
+            coin: "BTC".to_string(),
+        };
         let sub_mids = Subscription::AllMids;
         let user = address!("0000000000000000000000000000000000000001");
         let sub_fills = Subscription::UserFills { user };
 
         // SubscriptionResponse routes to all
-        assert!(message_matches_subscription(&Message::SubscriptionResponse, &sub_l2));
-        assert!(message_matches_subscription(&Message::SubscriptionResponse, &sub_mids));
-        assert!(message_matches_subscription(&Message::SubscriptionResponse, &sub_fills));
+        assert!(message_matches_subscription(
+            &Message::SubscriptionResponse,
+            &sub_l2
+        ));
+        assert!(message_matches_subscription(
+            &Message::SubscriptionResponse,
+            &sub_mids
+        ));
+        assert!(message_matches_subscription(
+            &Message::SubscriptionResponse,
+            &sub_fills
+        ));
 
         // Pong routes to all
         assert!(message_matches_subscription(&Message::Pong, &sub_l2));
@@ -887,9 +931,13 @@ mod tests {
         let user = address!("0000000000000000000000000000000000000001");
         let fills_msg = make_user_fills(user);
 
-        let l2_sub = Subscription::L2Book { coin: "BTC".to_string() };
+        let l2_sub = Subscription::L2Book {
+            coin: "BTC".to_string(),
+        };
         let mids_sub = Subscription::AllMids;
-        let trades_sub = Subscription::Trades { coin: "BTC".to_string() };
+        let trades_sub = Subscription::Trades {
+            coin: "BTC".to_string(),
+        };
         let fills_sub = Subscription::UserFills { user };
 
         // L2Book only matches L2Book
@@ -915,5 +963,95 @@ mod tests {
         assert!(!message_matches_subscription(&fills_msg, &mids_sub));
         assert!(!message_matches_subscription(&fills_msg, &trades_sub));
         assert!(message_matches_subscription(&fills_msg, &fills_sub));
+    }
+
+    // ==================== URL Scheme Detection Tests ====================
+
+    #[test]
+    fn test_scheme_detection_wss() {
+        let uri: hyper::Uri = "wss://api.hyperliquid.xyz/ws".parse().unwrap();
+        let scheme = uri.scheme_str().unwrap_or("wss");
+        let is_secure = scheme == "https" || scheme == "wss";
+        assert!(is_secure);
+    }
+
+    #[test]
+    fn test_scheme_detection_https() {
+        let uri: hyper::Uri = "https://api.hyperliquid.xyz/ws".parse().unwrap();
+        let scheme = uri.scheme_str().unwrap_or("wss");
+        let is_secure = scheme == "https" || scheme == "wss";
+        assert!(is_secure);
+    }
+
+    #[test]
+    fn test_scheme_detection_ws() {
+        let uri: hyper::Uri = "ws://localhost:8080/ws".parse().unwrap();
+        let scheme = uri.scheme_str().unwrap_or("wss");
+        let is_secure = scheme == "https" || scheme == "wss";
+        assert!(!is_secure);
+    }
+
+    #[test]
+    fn test_scheme_detection_http() {
+        let uri: hyper::Uri = "http://localhost:8080/ws".parse().unwrap();
+        let scheme = uri.scheme_str().unwrap_or("wss");
+        let is_secure = scheme == "https" || scheme == "wss";
+        assert!(!is_secure);
+    }
+
+    #[test]
+    fn test_ws_to_http_uri_conversion() {
+        let uri: hyper::Uri = "ws://localhost:8080/ws".parse().unwrap();
+        let mut parts = uri.clone().into_parts();
+        parts.scheme = Some("http".parse().unwrap());
+        let http_uri = hyper::Uri::from_parts(parts).unwrap();
+
+        assert_eq!(http_uri.scheme_str(), Some("http"));
+        assert_eq!(http_uri.host(), Some("localhost"));
+        assert_eq!(http_uri.port_u16(), Some(8080));
+        assert_eq!(http_uri.path(), "/ws");
+    }
+
+    #[test]
+    fn test_localhost_network_generates_ws_scheme() {
+        use crate::Network;
+
+        let network = Network::localhost(3000);
+        let ws_url = network.ws_url();
+
+        assert!(
+            ws_url.starts_with("ws://"),
+            "localhost should use ws:// scheme"
+        );
+        assert!(
+            !ws_url.starts_with("wss://"),
+            "localhost should not use wss:// scheme"
+        );
+    }
+
+    #[test]
+    fn test_mainnet_network_generates_wss_scheme() {
+        use crate::Network;
+
+        let network = Network::Mainnet;
+        let ws_url = network.ws_url();
+
+        assert!(
+            ws_url.starts_with("wss://"),
+            "mainnet should use wss:// scheme"
+        );
+    }
+
+    #[test]
+    fn test_testnet_network_generates_wss_scheme() {
+        use crate::Network;
+
+        let network = Network::Testnet;
+        let ws_url = network.ws_url();
+
+        assert!(
+            ws_url.starts_with("wss://"),
+            "testnet should use wss:// scheme"
+        );
     }
 }

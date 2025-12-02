@@ -2,55 +2,55 @@
 name = "ferrofluid"
 description = "A Rust library for interacting with the Hyperliquid Protocol"
 version = "0.1.1"
-edition = "2021"
-rust-version = "1.70"
+edition = "2024"
+rust-version = "1.85"
 authors = ["Copy Paste"]
 license = "MIT"
 repository = "https://github.com/ControlCplusControlV/ferrofluid"
 
 [dependencies]
-alloy = { version = "0.1", features = [ "full" ] }
+alloy = { version = "1.1", features = [ "full" ] }
 
 # HTTP client stack
 hyper = { version = "1", features = ["client", "http2"] }
 hyper-util = { version = "0.1", features = ["client", "http2"] }
-hyper-rustls = "0.27"  # TLS support
+hyper-rustls = { version = "0.27", default-features = false, features = ["ring", "http1", "native-tokio", "tls12", "logging"] }
 http-body-util = "0.1"
-tower = { version = "0.4", features = ["timeout", "limit", "retry"] }
+tower = { version = "0.5", features = ["timeout", "limit", "retry"] }
 http = "1"
 
 # WebSocket
-fastwebsockets = { version = "0.6", features = ["upgrade", "simd"] }
-rustls = { version = "0.23", features = ["aws_lc_rs"] }
-rustls-native-certs = "0.7"
-tokio-rustls = "0.26"
+fastwebsockets = { version = "0.10", features = ["upgrade", "simd"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+rustls-native-certs = "0.8"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 
 # JSON parsing
-simd-json = "0.13"
+simd-json = "0.15"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Async runtime
-tokio = { version = "1.38", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Logging
 tracing = "0.1"
 
 # Utilities
-bytes = "1.6"
+bytes = "1"
 dashmap = "6"
 parking_lot = "0.12"
 url = "2.5"
 hex = "0.4"
-uuid = { version = "1.10", features = ["v4", "serde"] }
-rmp-serde = "1.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+rmp-serde = "1"
 base64 = "0.22"
-rust_decimal = { version = "1.36", features = ["serde"] }
-rand = "0.8"
+rust_decimal = { version = "1", features = ["serde"] }
+rand = "0.9"
 reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
@@ -59,7 +59,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 tokio-test = "0.4"
 hex = "0.4"
 reqwest = { version = "0.12", features = ["json"] }
-clap = { version = "4.5", features = ["derive", "env"] }
+clap = { version = "4", features = ["derive", "env"] }
 
 
 [profile.release]

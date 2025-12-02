@@ -5,7 +5,7 @@ use ferrofluid::{Network, providers::WsProvider, types::ws::Message};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Install crypto provider for rustls
-    rustls::crypto::aws_lc_rs::default_provider()
+    rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install crypto provider");
     // Connect to WebSocket

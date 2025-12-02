@@ -9,7 +9,7 @@ use uuid::Uuid;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize the crypto provider for TLS
     rustls::crypto::CryptoProvider::install_default(
-        rustls::crypto::aws_lc_rs::default_provider(),
+        rustls::crypto::ring::default_provider(),
     )
     .expect("Failed to install rustls crypto provider");
     // Create a test signer (DO NOT USE IN PRODUCTION)

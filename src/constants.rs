@@ -93,3 +93,82 @@ pub const TIF_ALO: &str = "Alo";
 
 pub const TPSL_TP: &str = "tp";
 pub const TPSL_SL: &str = "sl";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_network_mainnet_urls() {
+        let network = Network::Mainnet;
+        assert_eq!(network.api_url(), "https://api.hyperliquid.xyz");
+        assert_eq!(network.ws_url(), "wss://api.hyperliquid.xyz/ws");
+    }
+
+    #[test]
+    fn test_network_testnet_urls() {
+        let network = Network::Testnet;
+        assert_eq!(network.api_url(), "https://api.hyperliquid-testnet.xyz");
+        assert_eq!(network.ws_url(), "wss://api.hyperliquid-testnet.xyz/ws");
+    }
+
+    #[test]
+    fn test_network_custom_urls() {
+        let network = Network::Custom {
+            api_url: "https://custom.example.com".to_string(),
+            ws_url: "wss://custom.example.com/ws".to_string(),
+        };
+        assert_eq!(network.api_url(), "https://custom.example.com");
+        assert_eq!(network.ws_url(), "wss://custom.example.com/ws");
+    }
+
+    #[test]
+    fn test_network_localhost() {
+        let network = Network::localhost(8080);
+        assert_eq!(network.api_url(), "http://localhost:8080");
+        assert_eq!(network.ws_url(), "ws://localhost:8080/ws");
+    }
+
+    #[test]
+    fn test_network_localhost_different_ports() {
+        let network1 = Network::localhost(3000);
+        let network2 = Network::localhost(9000);
+
+        assert_eq!(network1.api_url(), "http://localhost:3000");
+        assert_eq!(network1.ws_url(), "ws://localhost:3000/ws");
+
+        assert_eq!(network2.api_url(), "http://localhost:9000");
+        assert_eq!(network2.ws_url(), "ws://localhost:9000/ws");
+    }
+
+    #[test]
+    fn test_network_equality() {
+        assert_eq!(Network::Mainnet, Network::Mainnet);
+        assert_eq!(Network::Testnet, Network::Testnet);
+        assert_ne!(Network::Mainnet, Network::Testnet);
+
+        let custom1 = Network::Custom {
+            api_url: "http://a.com".to_string(),
+            ws_url: "ws://a.com/ws".to_string(),
+        };
+        let custom2 = Network::Custom {
+            api_url: "http://a.com".to_string(),
+            ws_url: "ws://a.com/ws".to_string(),
+        };
+        let custom3 = Network::Custom {
+            api_url: "http://b.com".to_string(),
+            ws_url: "ws://b.com/ws".to_string(),
+        };
+
+        assert_eq!(custom1, custom2);
+        assert_ne!(custom1, custom3);
+        assert_ne!(custom1, Network::Mainnet);
+    }
+
+    #[test]
+    fn test_network_clone() {
+        let network = Network::localhost(8080);
+        let cloned = network.clone();
+        assert_eq!(network, cloned);
+    }
+}

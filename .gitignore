@@ -1,1 +1,19 @@
 /target
+
+# Added by dev-init template
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock  # Only ignore in applications, not libraries
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+# OS
+.DS_Store
+Thumbs.db
+# Development environments
+.direnv/
+.devenv/
