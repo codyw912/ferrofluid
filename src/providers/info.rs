@@ -13,8 +13,8 @@ use serde_json::json;
 
 use crate::constants::Network;
 use crate::errors::HyperliquidError;
-use crate::types::info_types::*;
 use crate::types::Symbol;
+use crate::types::info_types::*;
 
 // Rate limiter implementation
 pub struct RateLimiter {
@@ -75,7 +75,7 @@ impl InfoProvider {
 
     pub fn new(network: Network) -> Self {
         // Initialize rustls crypto provider if not already set
-        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+        let _ = rustls::crypto::ring::default_provider().install_default();
 
         let https = HttpsConnectorBuilder::new()
             .with_native_roots()
@@ -86,12 +86,11 @@ impl InfoProvider {
 
         let client = Client::builder(TokioExecutor::new()).build(https);
 
+        let endpoint = format!("{}/info", network.api_url());
+
         Self {
             client,
-            endpoint: match network {
-                Network::Mainnet => "https://api.hyperliquid.xyz/info",
-                Network::Testnet => "https://api.hyperliquid-testnet.xyz/info",
-            },
+            endpoint: Box::leak(endpoint.into_boxed_str()),
         }
     }
 
@@ -292,7 +291,7 @@ impl InfoProvider {
 
     // ==================== Builder Pattern Methods ====================
 
-    pub fn candles(&self, coin: impl Into<Symbol>) -> CandlesRequestBuilder {
+    pub fn candles(&self, coin: impl Into<Symbol>) -> CandlesRequestBuilder<'_> {
         CandlesRequestBuilder {
             provider: self,
             coin: coin.into(),
@@ -302,7 +301,7 @@ impl InfoProvider {
         }
     }
 
-    pub fn funding_history(&self, coin: impl Into<Symbol>) -> FundingHistoryBuilder {
+    pub fn funding_history(&self, coin: impl Into<Symbol>) -> FundingHistoryBuilder<'_> {
         FundingHistoryBuilder {
             provider: self,
             coin: coin.into(),
