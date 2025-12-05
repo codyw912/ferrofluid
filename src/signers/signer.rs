@@ -203,3 +203,58 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod debug_tests {
+    use super::*;
+    use alloy::primitives::b256;
+
+    #[test]
+    fn test_recover_address_from_signature() {
+        // From the failing order
+        let signing_hash =
+            b256!("adba0244cebe5a212b98acd68e0fc207eccc16fea6ade35b734d2bc9b7349df7");
+        let r = U256::from_str_radix(
+            "8a5494a816df4de146e03f646ce7bd360682b32555f5087459968612ad560837",
+            16,
+        )
+        .unwrap();
+        let s = U256::from_str_radix(
+            "63ac9b3152e5215b7d8995750df2b373e76d5b7095f935adda4fa4aedd8e5e83",
+            16,
+        )
+        .unwrap();
+        let v = 27u64;
+
+        // Try to recover the address
+        use alloy::signers::k256::ecdsa::{
+            RecoveryId, Signature as K256Signature, VerifyingKey,
+        };
+
+        let mut sig_bytes = [0u8; 64];
+        sig_bytes[..32].copy_from_slice(&r.to_be_bytes::<32>());
+        sig_bytes[32..].copy_from_slice(&s.to_be_bytes::<32>());
+
+        let signature = K256Signature::from_slice(&sig_bytes).expect("valid signature");
+        let recovery_id =
+            RecoveryId::try_from((v - 27) as u8).expect("valid recovery id");
+
+        let recovered_key = VerifyingKey::recover_from_prehash(
+            signing_hash.as_slice(),
+            &signature,
+            recovery_id,
+        )
+        .expect("recovery should work");
+
+        let address = alloy::primitives::Address::from_public_key(&recovered_key);
+
+        println!("Expected: 0xc4452dd6c3cdceac06156386f596e63285661080");
+        println!("Recovered: {:?}", address);
+
+        // This will likely fail, showing us what address is actually recovered
+        assert_eq!(
+            format!("{:?}", address).to_lowercase(),
+            "0xc4452dd6c3cdceac06156386f596e63285661080"
+        );
+    }
+}

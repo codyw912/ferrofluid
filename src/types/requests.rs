@@ -1,6 +1,18 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Convert UUID to hex string with 0x prefix, matching official SDK format
+/// Uses UUID bytes directly to ensure correct byte ordering
+pub fn uuid_to_hex_string(uuid: Uuid) -> String {
+    let hex_string = uuid
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<String>>()
+        .join("");
+    format!("0x{hex_string}")
+}
+
 // ==================== Order Types ====================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,8 +138,9 @@ impl OrderRequest {
     }
 
     /// Set client order ID
+    /// Format matches official SDK: 0x prefix + 32 hex chars from UUID bytes
     pub fn with_cloid(mut self, cloid: Option<Uuid>) -> Self {
-        self.cloid = cloid.map(|id| format!("{:032x}", id.as_u128()));
+        self.cloid = cloid.map(uuid_to_hex_string);
         self
     }
 
@@ -149,7 +162,7 @@ impl CancelRequestCloid {
     pub fn new(asset: u32, cloid: Uuid) -> Self {
         Self {
             asset,
-            cloid: format!("{:032x}", cloid.as_u128()),
+            cloid: uuid_to_hex_string(cloid),
         }
     }
 }

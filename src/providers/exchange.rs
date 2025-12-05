@@ -886,6 +886,8 @@ impl<S: HyperliquidSigner> RawExchangeProvider<S> {
             action_value
         };
 
+        // Note: source is used in signing (Agent struct) but NOT sent in HTTP payload
+        // The API knows which network based on the endpoint URL
         self.post(final_action, signature, nonce).await
     }
 
@@ -931,25 +933,33 @@ impl<S: HyperliquidSigner> RawExchangeProvider<S> {
         self.post(action_value, signature, nonce).await
     }
 
+    /// Post action to exchange endpoint
+    /// Note: The Python SDK sends action, signature, nonce, vaultAddress, expiresAfter
+    /// The 'source' field is used for signing but NOT included in the HTTP payload
     async fn post(
         &self,
         action: Value,
         signature: HyperliquidSignature,
         nonce: u64,
     ) -> Result<ExchangeResponseStatus> {
-        // Hyperliquid expects signature as an object with r, s, v fields
-        // not as a concatenated hex string
+        // Match Python SDK payload format exactly
         let payload = json!({
             "action": action,
+            "nonce": nonce,
             "signature": {
                 "r": format!("0x{:064x}", signature.r),
                 "s": format!("0x{:064x}", signature.s),
                 "v": signature.v,
             },
-            "nonce": nonce,
             "vaultAddress": self.vault_address,
+            "expiresAfter": null,
         });
 
+        self.send_payload(&payload).await
+    }
+
+    /// Common HTTP POST logic
+    async fn send_payload(&self, payload: &Value) -> Result<ExchangeResponseStatus> {
         let body = Full::new(Bytes::from(serde_json::to_vec(&payload)?));
         let request = Request::builder()
             .method(Method::POST)
@@ -1120,7 +1130,7 @@ impl<'a, S: HyperliquidSigner> OrderBuilder<'a, S> {
             order_type: self.order_type.unwrap_or(OrderType::Limit(Limit {
                 tif: TIF_GTC.to_string(),
             })),
-            cloid: self.cloid.map(|id| format!("{:032x}", id.as_u128())),
+            cloid: self.cloid.map(crate::types::requests::uuid_to_hex_string),
         })
     }
 
